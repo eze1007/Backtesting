@@ -1,0 +1,106 @@
+name: Dati storici
+
+# Scarica le candele a 1 minuto e le pubblica come file della release "data-v1".
+# L'app le legge da lì. Gli anni già pubblicati vengono saltati, l'anno in corso viene aggiornato.
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Simboli separati da virgola, oppure 'all'"
+        default: "all"
+      from:
+        description: "Primo anno"
+        default: "2010"
+      force:
+        description: "Riscarica anche gli anni già pubblicati (true/false)"
+        default: "false"
+  schedule:
+    - cron: "17 3 * * 1" # ogni lunedì, per aggiungere le ultime settimane
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/data.yml"
+      - "scripts/data/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: data-v1
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      symbols: ${{ steps.list.outputs.symbols }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Crea la release dei dati se non esiste
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "Dati storici (1 minuto)" \
+              --notes "File annuali di candele a 1 minuto usati dall'app. Generati dal workflow 'Dati storici'. Fonti: Dukascopy (forex, oro) e Binance (crypto), solo per uso personale." \
+              --target "${{ github.sha }}" --prerelease
+          fi
+      - name: Elenco dei simboli
+        id: list
+        run: |
+          SYMS="${{ github.event.inputs.symbols || 'all' }}"
+          if [ "$SYMS" = "all" ]; then
+            SYMS=$(npx tsx scripts/data/list-symbols.ts)
+          fi
+          echo "symbols=$(echo "$SYMS" | tr -d ' ' | jq -R -c 'split(",")')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        symbol: ${{ fromJson(needs.prepare.outputs.symbols) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Scarica e pubblica anno per anno
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHROME_PATH: /usr/bin/google-chrome
+          SYMBOL: ${{ matrix.symbol }}
+          FROM: ${{ github.event.inputs.from || '2010' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh release view "$RELEASE_TAG" --json assets -q '.assets[].name' || true)
+          NOW=$(date -u +%Y)
+          # A gennaio si ricostruisce anche l'anno appena concluso, per includere dicembre completo.
+          REFRESH_PREV=$([ "$(date -u +%m)" = "01" ] && echo $((NOW - 1)) || echo "none")
+          # Prima gli anni recenti, che sono i più usati.
+          for Y in $(seq "$NOW" -1 "$FROM"); do
+            NAME="$SYMBOL-$Y.json.gz"
+            if [ "$FORCE" != "true" ] && [ "$Y" != "$NOW" ] && [ "$Y" != "$REFRESH_PREV" ] && echo "$EXISTING" | grep -qx "$NAME"; then
+              echo "$NAME già pubblicato"; continue
+            fi
+            npx tsx scripts/data/build.ts --symbols "$SYMBOL" --from "$Y" --to "$Y" --out data-out
+            if [ -f "data-out/$NAME" ]; then
+              gh release upload "$RELEASE_TAG" "data-out/$NAME" --clobber
+              rm "data-out/$NAME"
+            fi
+          done
