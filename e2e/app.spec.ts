@@ -87,3 +87,11 @@ test("crypto e cambio di timeframe", async ({ page }) => {
   await page.getByTestId("step-candle").click();
   await expect(page.getByTestId("clock")).toHaveText("2024-03-05 12:00 UTC");
 });
+
+test("sfida futures con perdita massima trailing (Topstep)", async ({ page }) => {
+  await createSession(page, { preset: "topstep-combine", size: "50000" });
+  await expect(page.getByTestId("prop-status")).toHaveText("Combine");
+  await expect(page.getByTestId("prop-panel")).toContainText("trailing fine giornata");
+  await expect(page.getByTestId("max-floor")).toContainText("48.000");
+  await expect(page.getByTestId("prop-panel")).toContainText("Giorno migliore");
+});

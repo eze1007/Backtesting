@@ -1,6 +1,9 @@
 "use client";
 
 import { currentPhase, missingRequirements, propLevels } from "@/lib/prop/engine";
+import type { MaxLossType } from "@/lib/prop/presets";
+
+const LOSS_TYPE: Record<MaxLossType, string> = { static: "statica", trailing_eod: "trailing fine giornata", trailing_intraday: "trailing intraday" };
 import type { Session } from "@/lib/session";
 
 function money(n: number) {
@@ -28,6 +31,7 @@ export default function PropPanel({ session }: { session: Session }) {
   const dailyLimit = (init * phase.dailyLossPct) / 100;
   const maxRoom = st.lastEquity - lv.maxFloor;
   const maxLimit = (init * phase.maxLossPct) / 100;
+  const hasDaily = phase.dailyLossPct > 0;
   const missing = missingRequirements(prop.rules, st);
 
   return (
@@ -47,12 +51,14 @@ export default function PropPanel({ session }: { session: Session }) {
             <div className="row"><span className="muted">Target {phase.profitTargetPct}%</span><span className="spacer" /><span>{money(profit)} / {money(targetAmount)}</span></div>
             <Bar value={profit} max={targetAmount} color="var(--green)" />
           </div>
+          {hasDaily && (
+            <div>
+              <div className="row"><span className="muted">Margine perdita giornaliera</span><span className="spacer" /><span>{money(dailyRoom)}</span></div>
+              <Bar value={dailyRoom} max={dailyLimit} color="var(--amber)" />
+            </div>
+          )}
           <div>
-            <div className="row"><span className="muted">Margine perdita giornaliera</span><span className="spacer" /><span>{money(dailyRoom)}</span></div>
-            <Bar value={dailyRoom} max={dailyLimit} color="var(--amber)" />
-          </div>
-          <div>
-            <div className="row"><span className="muted">Margine perdita massima</span><span className="spacer" /><span>{money(maxRoom)}</span></div>
+            <div className="row"><span className="muted">Margine perdita massima ({LOSS_TYPE[phase.maxLossType ?? "static"]})</span><span className="spacer" /><span data-testid="max-room">{money(maxRoom)}</span></div>
             <Bar value={maxRoom} max={maxLimit} color="var(--red)" />
           </div>
           <div className="kv">
@@ -64,10 +70,22 @@ export default function PropPanel({ session }: { session: Session }) {
                 <span>{lv.profitableDays} / {phase.minProfitableDays}</span>
               </>
             )}
-            <span>Limite giornaliero</span>
-            <span>{money(lv.dailyFloor)}</span>
+            {hasDaily && (
+              <>
+                <span>Limite giornaliero</span>
+                <span>{money(lv.dailyFloor)}</span>
+              </>
+            )}
             <span>Limite massimo</span>
-            <span>{money(lv.maxFloor)}</span>
+            <span data-testid="max-floor">{money(lv.maxFloor)}</span>
+            {lv.consistency.required && (
+              <>
+                <span>Giorno migliore</span>
+                <span className={lv.consistency.ok ? "" : "neg"}>
+                  {money(lv.consistency.bestDay)} (max {phase.consistencyPct}%)
+                </span>
+              </>
+            )}
           </div>
           {missing.length > 0 && <div className="hint">{missing.join(" ")}</div>}
         </div>

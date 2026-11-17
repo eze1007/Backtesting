@@ -1,6 +1,6 @@
 # Backtesting
 
-App web per fare backtesting manuale: si sceglie uno strumento e una data, il grafico nasconde il futuro e lo si fa avanzare candela per candela, aprendo e chiudendo operazioni come se fosse live. Si può anche simulare una sfida prop firm, con le regole di FTMO, The5ers, FundedNext, Funding Pips o regole personalizzate.
+App web per fare backtesting manuale: si sceglie uno strumento e una data, il grafico nasconde il futuro e lo si fa avanzare candela per candela, aprendo e chiudendo operazioni come se fosse live. Si può anche simulare una sfida prop firm, con le regole di FTMO, The5ers, FundedNext, Funding Pips, Topstep, Apex o regole personalizzate.
 
 Il piano completo è in [PROGETTO.md](PROGETTO.md).
 
@@ -11,7 +11,7 @@ Il piano completo è in [PROGETTO.md](PROGETTO.md).
 - **Ordini**: a mercato, limit e stop, buy e sell, stop loss e take profit (anche trascinandoli sul grafico), dimensione in lotti o in % di rischio, spread e commissioni.
 - **Conti e sessioni**: quante sessioni vuoi, ognuna con il suo conto, salvate nel browser e riprendibili.
 - **Statistiche**: win rate, profit factor, expectancy, drawdown, curva del saldo, esportazione CSV.
-- **Sfide prop**: 4 prop firm con le taglie di conto, sfide a 2 fasi, perdita giornaliera, perdita massima, giorni minimi, giorni in profitto, esito superata/fallita e nuovi tentativi.
+- **Sfide prop**: 6 prop firm (FTMO, The5ers, FundedNext, Funding Pips, Topstep, Apex) con le taglie di conto, sfide a 1 o 2 fasi, perdita giornaliera, perdita massima statica o trailing (fine giornata o intraday), consistenza, giorni minimi, giorni in profitto, esito superata/fallita e nuovi tentativi.
 - **Strumenti**: 28 coppie forex, oro (XAUUSD) e 8 crypto (BTC, ETH, BNB, SOL, XRP, ADA, DOGE, LTC).
 - **Disegni**: linee orizzontali e trend line.
 

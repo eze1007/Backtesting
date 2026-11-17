@@ -27,6 +27,8 @@ export interface PropState {
   lowestEquity: number;
   lastBalance: number;
   lastEquity: number;
+  /** Massimo di riferimento per la perdita massima trailing (saldo di fine giornata o equity). */
+  peak: number;
   results: PhaseResult[];
   failReason: string | null;
 }
@@ -37,6 +39,8 @@ export interface PropBarInput {
   balance: number;
   equity: number;
   minEquity: number;
+  /** Equity migliore stimata dentro la candela (per il trailing intraday); se manca si usa `equity`. */
+  maxEquity?: number;
   /** Operazioni aperte in questa candela. */
   opened: number;
   /** P&L netto delle operazioni chiuse in questa candela. */
@@ -48,14 +52,22 @@ export type PropAction = "none" | "fail" | "phase_passed" | "passed";
 
 const dayFormatters = new Map<string, Intl.DateTimeFormat>();
 
-/** Data (YYYY-MM-DD) di `time` nel fuso orario `tz`. */
-export function tradingDay(time: number, tz: string): string {
+/**
+ * Giorno di trading (YYYY-MM-DD) di `time` nel fuso orario `tz`, con il cambio giorno all'ora `resetHour`.
+ * Con resetHour = 17 le 18:00 di lunedì appartengono al giorno di trading di martedì.
+ */
+export function tradingDay(time: number, tz: string, resetHour = 0): string {
   let f = dayFormatters.get(tz);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+    f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
     dayFormatters.set(tz, f);
   }
-  return f.format(new Date(time * 1000));
+  const parts = f.formatToParts(new Date(time * 1000));
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  const date = `${get("year")}-${get("month")}-${get("day")}`;
+  if (resetHour <= 0 || Number(get("hour")) < resetHour) return date;
+  const next = new Date(Date.UTC(Number(get("year")), Number(get("month")) - 1, Number(get("day")) + 1));
+  return next.toISOString().slice(0, 10);
 }
 
 export function newPropState(initialBalance: number): PropState {
@@ -71,6 +83,7 @@ export function newPropState(initialBalance: number): PropState {
     lowestEquity: initialBalance,
     lastBalance: initialBalance,
     lastEquity: initialBalance,
+    peak: initialBalance,
     results: [],
     failReason: null,
   };
@@ -85,12 +98,30 @@ export function propLevels(rules: PropRules, state: PropState) {
   const p = currentPhase(rules, state);
   const init = state.initialBalance;
   const dailyBase = rules.dailyLossBase === "balance" ? state.dayStartBalance : Math.max(state.dayStartBalance, state.dayStartEquity);
+  const maxLoss = (init * p.maxLossPct) / 100;
+  let maxFloor = init - maxLoss;
+  if ((p.maxLossType ?? "static") !== "static") {
+    const peak = state.peak ?? init;
+    maxFloor = peak - maxLoss;
+    if (p.trailingStopsAtInitial) maxFloor = Math.min(maxFloor, init);
+  }
   return {
     target: init * (1 + p.profitTargetPct / 100),
-    dailyFloor: dailyBase - (init * p.dailyLossPct) / 100,
-    maxFloor: init * (1 - p.maxLossPct / 100),
+    dailyFloor: p.dailyLossPct > 0 ? dailyBase - (init * p.dailyLossPct) / 100 : -Infinity,
+    maxFloor,
     profitableDays: profitableDays(rules, state),
+    consistency: consistency(rules, state),
   };
+}
+
+/** Stato della regola di consistenza: giorno migliore rispetto al profitto totale. */
+export function consistency(rules: PropRules, state: PropState): { required: boolean; ok: boolean; bestDay: number; maxBestDay: number } {
+  const p = currentPhase(rules, state);
+  const pct = p.consistencyPct ?? 0;
+  const bestDay = Math.max(0, ...Object.values(state.dailyPnl));
+  const profit = state.lastBalance - state.initialBalance;
+  const maxBestDay = (Math.max(0, profit) * pct) / 100;
+  return { required: pct > 0, ok: pct <= 0 || (profit > 0 && bestDay <= maxBestDay + 1e-6), bestDay, maxBestDay };
 }
 
 export function profitableDays(rules: PropRules, state: PropState): number {
@@ -112,14 +143,20 @@ export function evaluatePropBar(rules: PropRules, state: PropState, bar: PropBar
   const s: PropState = { ...state, tradingDays: state.tradingDays, dailyPnl: { ...state.dailyPnl } };
 
   // Cambio di giornata: il punto di partenza è il saldo/equity di fine giornata precedente.
-  const day = tradingDay(bar.time - 1, rules.dayResetTimeZone);
+  const phaseRules = currentPhase(rules, s);
+  const lossType = phaseRules.maxLossType ?? "static";
+  const day = tradingDay(bar.time - 1, rules.dayResetTimeZone, rules.dayResetHour ?? 0);
   if (s.day !== day) {
     if (s.day !== null) {
       s.dayStartBalance = s.lastBalance;
       s.dayStartEquity = s.lastEquity;
+      // Trailing a fine giornata: il massimo si aggiorna con il saldo di chiusura del giorno precedente.
+      if (lossType === "trailing_eod") s.peak = Math.max(s.peak ?? s.initialBalance, s.lastBalance);
     }
     s.day = day;
   }
+  // Trailing intraday: il massimo segue l'equity migliore, anche con posizioni aperte.
+  if (lossType === "trailing_intraday") s.peak = Math.max(s.peak ?? s.initialBalance, bar.maxEquity ?? bar.equity, bar.balance);
   if (bar.opened > 0 && !s.tradingDays.includes(day)) s.tradingDays = [...s.tradingDays, day];
   if (bar.closedPnl !== 0) s.dailyPnl[day] = Math.round(((s.dailyPnl[day] ?? 0) + bar.closedPnl) * 100) / 100;
 
@@ -140,7 +177,8 @@ export function evaluatePropBar(rules: PropRules, state: PropState, bar: PropBar
   const targetReached = bar.balance >= levels.target && bar.openPositions === 0;
   const daysOk = s.tradingDays.length >= phase.minTradingDays;
   const profitDaysOk = profitableDays(rules, s) >= phase.minProfitableDays;
-  if (targetReached && daysOk && profitDaysOk) {
+  const consistencyOk = levels.consistency.ok;
+  if (targetReached && daysOk && profitDaysOk && consistencyOk) {
     const result: PhaseResult = {
       phase: s.phase,
       name: phase.name,
@@ -179,5 +217,9 @@ export function missingRequirements(rules: PropRules, state: PropState): string[
   if (days > 0) out.push(`Servono ancora ${days} giorni di trading.`);
   const pd = p.minProfitableDays - lv.profitableDays;
   if (pd > 0) out.push(`Servono ancora ${pd} giorni in profitto.`);
+  const c = lv.consistency;
+  if (c.required && !c.ok && state.lastBalance > state.initialBalance) {
+    out.push(`Consistenza: il giorno migliore (${fmt(c.bestDay)}) supera il ${p.consistencyPct}% del profitto; serve un profitto totale di almeno ${fmt((c.bestDay * 100) / (p.consistencyPct ?? 100))}.`);
+  }
   return out;
 }

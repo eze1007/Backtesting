@@ -227,4 +227,13 @@ Le fasi 0–5 sono costruite. Per far funzionare l'app senza creare account este
 
 Cosa c'è: replay con intrabar, 6 timeframe, ordini market/limit/stop, SL/TP trascinabili, size in lotti o % di rischio, spread e commissioni, sessioni multiple, statistiche con curva del saldo ed esportazione CSV, 4 prop firm a 2 fasi più regole personalizzate, nuovi tentativi, 28 coppie forex + oro + 8 crypto, linee orizzontali e trend line.
 
-Dalla sezione 2.2 (dopo l'MVP) restano: multi-grafico, indicatori, drawdown trailing, consistenza, altre prop firm, indici e futures, chiusure parziali e TP multipli.
+### Fase 6 completata (17/11/2026)
+
+- Perdita massima **trailing a fine giornata** e **trailing intraday** (sull'equity migliore del minuto), con l'opzione di fermare il limite al saldo iniziale.
+- **Regola di consistenza**: la fase si supera solo quando il giorno migliore non supera la % indicata del profitto totale (non fa fallire la sfida).
+- **Cambio giorno a un'ora precisa** del fuso dell'azienda (es. 17:00 di New York per i futures).
+- **Regole diverse per taglia di conto** (importi in dollari non proporzionali).
+- Nuove prop firm: **Topstep** Trading Combine (trailing a fine giornata, consistenza 50%) e **Apex Trader Funding** (trailing intraday, senza perdita giornaliera). Sono sfide pensate per i futures: finché la fase 7 non aggiunge indici e futures si simulano su forex, oro e crypto.
+- Regole personalizzate con tipo di perdita massima e consistenza.
+
+Restano dalla sezione 2.2: multi-grafico, indicatori, indici e futures (fase 7), chiusure parziali e TP multipli.

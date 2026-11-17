@@ -114,6 +114,7 @@ export function stepSession(session: Session, bar: Candle, ctx: MarketCtx): Step
       balance: engine.balance,
       equity: r.equity,
       minEquity: r.minEquity,
+      maxEquity: r.maxEquity,
       opened,
       closedPnl,
       openPositions: openCount,

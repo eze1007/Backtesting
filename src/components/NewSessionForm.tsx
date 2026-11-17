@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { INSTRUMENTS, getInstrument, type Category } from "@/lib/instruments";
 import { TIMEFRAMES, type TimeframeId } from "@/lib/candles";
-import { PROP_PRESETS, customRules, getPreset } from "@/lib/prop/presets";
+import { PROP_PRESETS, customRules, describePhase, getPreset, resolveRules, type MaxLossType } from "@/lib/prop/presets";
 import { createSession, type Session } from "@/lib/session";
 import { newId } from "@/lib/storage";
 
@@ -24,7 +24,7 @@ export default function NewSessionForm({ onCreate }: { onCreate: (s: Session) =>
   const [balance, setBalance] = useState(10_000);
   const [presetId, setPresetId] = useState(PROP_PRESETS[0].id);
   const [size, setSize] = useState(PROP_PRESETS[0].sizes[2] ?? PROP_PRESETS[0].sizes[0]);
-  const [custom, setCustom] = useState({ phases: 2 as 1 | 2, target: 10, target2: 5, daily: 5, max: 10, minDays: 4 });
+  const [custom, setCustom] = useState({ phases: 2 as 1 | 2, target: 10, target2: 5, daily: 5, max: 10, minDays: 4, lossType: "static" as MaxLossType, lockAtInitial: false, consistency: 0 });
   const [spread, setSpread] = useState<number | "">("");
   const [commission, setCommission] = useState(0);
   const [commissionPct, setCommissionPct] = useState(0);
@@ -69,11 +69,14 @@ export default function NewSessionForm({ onCreate }: { onCreate: (s: Session) =>
             dailyLossPct: custom.daily,
             maxLossPct: custom.max,
             minTradingDays: custom.minDays,
+            maxLossType: custom.lossType,
+            trailingStopsAtInitial: custom.lockAtInitial,
+            consistencyPct: custom.consistency,
           }),
         };
       } else if (preset) {
         initial = size;
-        prop = { presetId: preset.id, label: `${preset.firm} · ${preset.program}`, rules: preset.rules };
+        prop = { presetId: preset.id, label: `${preset.firm} · ${preset.program}`, rules: resolveRules(preset, size) };
       }
     }
     if (!(initial > 0)) return setError("Il saldo iniziale deve essere maggiore di zero.");
@@ -140,9 +143,16 @@ export default function NewSessionForm({ onCreate }: { onCreate: (s: Session) =>
           <label>
             Prop firm
             <select value={presetId} onChange={(e) => onPreset(e.target.value)} name="preset">
-              {PROP_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>{p.firm} · {p.program}</option>
-              ))}
+              <optgroup label="Forex / CFD">
+                {PROP_PRESETS.filter((p) => p.market === "forex").map((p) => (
+                  <option key={p.id} value={p.id}>{p.firm} · {p.program}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Futures">
+                {PROP_PRESETS.filter((p) => p.market === "futures").map((p) => (
+                  <option key={p.id} value={p.id}>{p.firm} · {p.program}</option>
+                ))}
+              </optgroup>
               <option value="custom">Regole personalizzate</option>
             </select>
           </label>
@@ -163,13 +173,13 @@ export default function NewSessionForm({ onCreate }: { onCreate: (s: Session) =>
           )}
           {presetId !== "custom" && preset && (
             <div className="hint" style={{ gridColumn: "span 2" }}>
-              {preset.rules.phases.map((p) => (
+              {resolveRules(preset, size).phases.map((p) => (
                 <div key={p.name}>
-                  <b>{p.name}</b>: target {p.profitTargetPct}%, perdita giornaliera {p.dailyLossPct}%, perdita massima {p.maxLossPct}%, minimo {p.minTradingDays} giorni
-                  {p.minProfitableDays ? `, ${p.minProfitableDays} giorni in profitto` : ""}
+                  <b>{p.name}</b>: {describePhase(p, size)}
                 </div>
               ))}
               <div>{preset.notes} Valori indicativi, verificati il {preset.checkedOn}.</div>
+              {preset.market === "futures" && <div>Pensata per i futures: per ora si può simulare su forex, oro e crypto.</div>}
             </div>
           )}
         </div>
@@ -202,16 +212,34 @@ export default function NewSessionForm({ onCreate }: { onCreate: (s: Session) =>
             </label>
           )}
           <label>
-            Perdita giornaliera (%)
-            <input type="number" step={0.5} min={0.5} value={custom.daily} onChange={(e) => setCustom({ ...custom, daily: Number(e.target.value) })} />
+            Perdita giornaliera (%, 0 = nessuna)
+            <input type="number" step={0.5} min={0} value={custom.daily} onChange={(e) => setCustom({ ...custom, daily: Number(e.target.value) })} />
           </label>
           <label>
             Perdita massima (%)
             <input type="number" step={0.5} min={1} value={custom.max} onChange={(e) => setCustom({ ...custom, max: Number(e.target.value) })} />
           </label>
           <label>
+            Tipo di perdita massima
+            <select value={custom.lossType} onChange={(e) => setCustom({ ...custom, lossType: e.target.value as MaxLossType })} name="lossType">
+              <option value="static">Statica</option>
+              <option value="trailing_eod">Trailing a fine giornata</option>
+              <option value="trailing_intraday">Trailing intraday</option>
+            </select>
+          </label>
+          {custom.lossType !== "static" && (
+            <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={custom.lockAtInitial} onChange={(e) => setCustom({ ...custom, lockAtInitial: e.target.checked })} />
+              Il limite si ferma al saldo iniziale
+            </label>
+          )}
+          <label>
             Giorni minimi
             <input type="number" step={1} min={0} value={custom.minDays} onChange={(e) => setCustom({ ...custom, minDays: Number(e.target.value) })} />
+          </label>
+          <label>
+            Consistenza (% max del giorno migliore, 0 = no)
+            <input type="number" step={5} min={0} max={100} value={custom.consistency} onChange={(e) => setCustom({ ...custom, consistency: Number(e.target.value) })} />
           </label>
         </div>
       )}

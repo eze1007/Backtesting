@@ -69,6 +69,8 @@ export interface BarResult {
   equity: number;
   /** Equity peggiore stimata dentro la candela (per le regole prop). */
   minEquity: number;
+  /** Equity migliore stimata dentro la candela (per la perdita massima trailing intraday). */
+  maxEquity: number;
 }
 
 export interface OrderRequest {
@@ -291,6 +293,7 @@ export function processBar(state: EngineState, bar: Candle, ctx: MarketCtx): Bar
   const time = bar.time + 60;
   let balance = state.balance;
   let worstFloating = 0;
+  let bestFloating = 0;
   const startBalance = state.balance;
 
   const orders = state.orders.map((o) => {
@@ -335,6 +338,10 @@ export function processBar(state: EngineState, bar: Candle, ctx: MarketCtx): Bar
     let worst = isBuy ? exLow : exHigh;
     if (exit?.reason === "sl") worst = exit.price;
     worstFloating += grossPnlUsd(cur, worst, time, ctx) - commissionUsd(cur, time, ctx);
+    // Prezzo migliore raggiunto: limitato al take profit se è stato toccato.
+    let best = isBuy ? exHigh : exLow;
+    if (cur.tp != null) best = isBuy ? Math.min(best, Math.max(cur.tp, exOpen)) : Math.max(best, Math.min(cur.tp, exOpen));
+    bestFloating += grossPnlUsd(cur, best, time, ctx) - commissionUsd(cur, time, ctx);
 
     if (!exit) return cur;
     const closed = closeAt(cur, exit.price, time, exit.reason, ctx);
@@ -346,7 +353,8 @@ export function processBar(state: EngineState, bar: Candle, ctx: MarketCtx): Bar
   const next: EngineState = { ...state, balance, orders };
   const equity = equityAt(next, bar.close, time, ctx);
   const minEquity = Math.min(equity, startBalance + worstFloating);
-  return { state: next, events, equity, minEquity };
+  const maxEquity = Math.max(equity, startBalance + bestFloating);
+  return { state: next, events, equity, minEquity, maxEquity };
 }
 
 /** Lotti per rischiare `riskPct`% del saldo con lo stop a `slDistance` di prezzo. */

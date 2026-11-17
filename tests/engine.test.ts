@@ -125,4 +125,13 @@ describe("conversione valuta e rischio", () => {
     const bad = modifyOrder(r.state, 1, { sl: 1.2 }, bar(0, 1.1, 1.1, 1.1, 1.1), c);
     expect(bad.error).toBeDefined();
   });
+
+  it("l'equity massima della candela si ferma al take profit", () => {
+    const c = ctx();
+    const r = placeOrder(newEngine(c.account), { side: "buy", type: "market", lots: 1, tp: 1.102 }, bar(0, 1.1, 1.1, 1.1, 1.1), c);
+    const res = processBar(r.state, bar(1, 1.1, 1.101, 1.099, 1.1005), c);
+    expect(res.maxEquity).toBeCloseTo(100_100, 2);
+    const hit = processBar(r.state, bar(1, 1.1, 1.105, 1.099, 1.1), c);
+    expect(hit.maxEquity).toBeCloseTo(100_200, 2);
+  });
 });
