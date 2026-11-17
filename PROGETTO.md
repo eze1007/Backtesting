@@ -7,7 +7,7 @@ Documento di partenza per costruire la nostra app web di backtesting. L'ispirazi
 L'app deve fare bene tre cose:
 
 1. **Trading manuale su grafico con replay**: si sceglie uno strumento e una data, il grafico nasconde il futuro e lo si fa avanzare candela per candela, aprendo e chiudendo operazioni come se fosse live.
-2. **Dati storici di molte coppie e valute**: forex, oro, poi crypto, indici e futures, con anni di storico a 1 minuto.
+2. **Dati storici di molte coppie e valute**: forex, oro e crypto già nella prima versione, poi indici e futures, con anni di storico a 1 minuto.
 3. **Simulazione di sfide prop firm e di conti diversi**: si crea un conto con regole (target, perdita giornaliera, drawdown massimo, giorni minimi) e l'app dice se la sfida è superata o fallita.
 
 **Fuori ambito**: tutte le funzioni AI, community e strategie pubbliche, journal del trading reale, abbonamenti e pagamenti (per ora), dati al secondo, Renko e range bar.
@@ -59,15 +59,32 @@ Ricerca fatta il 17/11/2026 sulle pagine pubbliche del sito (home, features, pri
 | Conto | Saldo iniziale, valuta, leva, spread e commissione |
 | Statistiche | Lista operazioni, win rate, P&L, profit factor, drawdown, curva di equity |
 | Sessioni | Salvataggio e ripresa |
-| Prop | Sfida a 1 fase con target, perdita giornaliera, drawdown statico, giorni minimi |
-| Dati | 28 coppie forex principali + XAUUSD a 1 minuto dal 2010 |
+| Prop | **4 prop firm diverse già pronte** (vedi 2.3), sfide a 1 e 2 fasi, target, perdita giornaliera, drawdown massimo statico, giorni minimi, regole personalizzate |
+| Dati | 28 coppie forex principali + XAUUSD a 1 minuto dal 2010, più le crypto principali (BTC, ETH, SOL, XRP, BNB e altre in USDT) dal 2017 |
 
 ### 2.2 Dopo l'MVP
 - Intrabar, multi-grafico sincronizzato, indicatori (EMA, SMA, RSI, ATR, sessioni).
-- Drawdown trailing (EOD e intraday), sfide in 2 fasi, regola di consistenza, preset di aziende reali scritti da noi a partire dai regolamenti pubblici.
+- Drawdown trailing (EOD e intraday), regola di consistenza, altre prop firm oltre alle 4 dell'MVP (comprese quelle futures come Topstep e Apex).
 - Più conti in parallelo e confronto tra tentativi.
-- Crypto, indici, futures, metalli e materie prime.
+- Indici, futures, altri metalli e materie prime (le crypto sono già nell'MVP).
 - Chiusure parziali, TP multipli, export CSV.
+
+### 2.3 Le 4 prop firm dell'MVP
+Sono quattro aziende forex/CFD tra le più usate, tutte con sfida in due fasi e drawdown massimo statico, quindi simulabili con i dati forex, oro e crypto dell'MVP. Ogni preset è un file JSON scritto da noi a partire dal regolamento pubblico, con la data dell'ultima verifica.
+
+| Prop firm | Sfida | Target fase 1 / fase 2 | Perdita giornaliera | Perdita massima | Giorni minimi |
+|---|---|---|---|---|---|
+| FTMO | Challenge 2 fasi | 10% / 5% | 5% | 10% statica | 4 giorni di trading |
+| The5ers | High Stakes | 8% / 5% | 5% | 10% statica | 3 giorni in profitto |
+| FundedNext | Stellar 2 fasi | 8% / 5% | 5% | 10% statica | 5 giorni di trading |
+| Funding Pips | 2 fasi | 8% / 5% | 5% | 10% statica | 3 giorni di trading |
+
+I valori sono indicativi e vanno ricontrollati sui regolamenti ufficiali prima di scrivere i preset, perché le aziende li cambiano spesso. Per ogni azienda il preset indica anche:
+- le taglie di conto disponibili (per esempio 10k, 25k, 50k, 100k, 200k);
+- su cosa si calcola la perdita giornaliera (saldo o equity di inizio giornata) e a che ora si azzera il giorno (per FTMO mezzanotte CET);
+- se nella fase 2 il target cambia.
+
+Oltre ai 4 preset, l'utente può sempre creare una sfida con regole proprie.
 
 ---
 
@@ -170,13 +187,13 @@ Tutto gira in cloud, niente da installare sul PC.
 | Fase | Contenuto | Risultato visibile |
 |---|---|---|
 | **0. Fondamenta** | Progetto Next.js, CI, lint, deploy su Vercel, database e login | Sito online vuoto con accesso |
-| **1. Dati** | Pipeline Dukascopy per EURUSD e XAUUSD, formato a blocchi, API che serve i blocchi | Dati scaricabili per 2 strumenti |
+| **1. Dati** | Pipeline Dukascopy per le 28 coppie forex e XAUUSD, pipeline Binance per le crypto principali, formato a blocchi, API che serve i blocchi | Forex, oro e crypto disponibili |
 | **2. Grafico e replay** | Lightweight Charts, aggregazione timeframe dal 1m, play/pausa/velocità/step/salto a data | Replay funzionante senza trading |
 | **3. Trading** | Motore ordini (market, limit, SL, TP), size in lotti o % rischio, spread e commissioni, pannello operazioni | Si può fare backtest manuale |
 | **4. Conti e statistiche** | Conti multipli, salvataggio sessioni, statistiche e curva di equity | Sessioni riprendibili con risultati |
-| **5. Prop firm (base)** | Motore regole: target, perdita giornaliera, drawdown statico, giorni minimi; esito superata/fallita | Prima sfida prop simulata |
-| **6. Prop firm (avanzato)** | Drawdown trailing EOD e intraday, 2 fasi, consistenza, preset di aziende, storico tentativi | Simulazione prop completa |
-| **7. Più mercati** | Tutte le coppie forex, metalli, crypto (Binance), indici; ricerca strumenti | Catalogo ampio |
+| **5. Prop firm (MVP)** | Motore regole: target, perdita giornaliera, drawdown statico, giorni minimi, 2 fasi; i 4 preset (FTMO, The5ers, FundedNext, Funding Pips) più regole personalizzate; esito superata/fallita e storico tentativi | 4 sfide prop simulabili |
+| **6. Prop firm (avanzato)** | Drawdown trailing EOD e intraday, consistenza, altre aziende comprese le futures | Simulazione prop completa |
+| **7. Più mercati** | Indici, futures, altri metalli e materie prime; ricerca strumenti | Catalogo ampio |
 | **8. Rifinitura** | Intrabar, multi-grafico, indicatori, disegni, scorciatoie, export CSV | App completa per l'uso quotidiano |
 
 Le fasi 0–5 formano l'MVP. Ogni fase si chiude con una pull request revisionabile.
@@ -192,4 +209,4 @@ Le fasi 0–5 formano l'MVP. Ogni fase si chiude con una pull request revisionab
 ## 8. Decisioni da prendere con Eze
 1. App solo personale o da aprire anche ad altri utenti (cambia la scelta delle fonti dati)?
 2. Nome dell'app.
-3. Primi strumenti oltre a EURUSD e XAUUSD.
+3. Elenco preciso delle crypto da includere nell'MVP.
