@@ -1,0 +1,183 @@
+import type { PropRules, PhaseRules } from "./presets";
+
+export type PropStatus = "active" | "passed" | "failed";
+
+export interface PhaseResult {
+  phase: number;
+  name: string;
+  status: "passed" | "failed";
+  reason: string;
+  time: number;
+  balance: number;
+}
+
+export interface PropState {
+  status: PropStatus;
+  phase: number;
+  initialBalance: number;
+  /** Giorno di trading corrente (YYYY-MM-DD nel fuso dell'azienda). */
+  day: string | null;
+  dayStartBalance: number;
+  dayStartEquity: number;
+  /** Giorni con almeno un'operazione aperta, nella fase corrente. */
+  tradingDays: string[];
+  /** P&L chiuso per giorno, nella fase corrente. */
+  dailyPnl: Record<string, number>;
+  /** Equity minima toccata nella fase, per mostrare quanto si è andati vicini ai limiti. */
+  lowestEquity: number;
+  lastBalance: number;
+  lastEquity: number;
+  results: PhaseResult[];
+  failReason: string | null;
+}
+
+export interface PropBarInput {
+  /** Istante di chiusura della candela da 1 minuto, in secondi. */
+  time: number;
+  balance: number;
+  equity: number;
+  minEquity: number;
+  /** Operazioni aperte in questa candela. */
+  opened: number;
+  /** P&L netto delle operazioni chiuse in questa candela. */
+  closedPnl: number;
+  openPositions: number;
+}
+
+export type PropAction = "none" | "fail" | "phase_passed" | "passed";
+
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Data (YYYY-MM-DD) di `time` nel fuso orario `tz`. */
+export function tradingDay(time: number, tz: string): string {
+  let f = dayFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormatters.set(tz, f);
+  }
+  return f.format(new Date(time * 1000));
+}
+
+export function newPropState(initialBalance: number): PropState {
+  return {
+    status: "active",
+    phase: 0,
+    initialBalance,
+    day: null,
+    dayStartBalance: initialBalance,
+    dayStartEquity: initialBalance,
+    tradingDays: [],
+    dailyPnl: {},
+    lowestEquity: initialBalance,
+    lastBalance: initialBalance,
+    lastEquity: initialBalance,
+    results: [],
+    failReason: null,
+  };
+}
+
+export function currentPhase(rules: PropRules, state: PropState): PhaseRules {
+  return rules.phases[Math.min(state.phase, rules.phases.length - 1)];
+}
+
+/** Livelli in USD della fase corrente, utili per l'interfaccia. */
+export function propLevels(rules: PropRules, state: PropState) {
+  const p = currentPhase(rules, state);
+  const init = state.initialBalance;
+  const dailyBase = rules.dailyLossBase === "balance" ? state.dayStartBalance : Math.max(state.dayStartBalance, state.dayStartEquity);
+  return {
+    target: init * (1 + p.profitTargetPct / 100),
+    dailyFloor: dailyBase - (init * p.dailyLossPct) / 100,
+    maxFloor: init * (1 - p.maxLossPct / 100),
+    profitableDays: profitableDays(rules, state),
+  };
+}
+
+export function profitableDays(rules: PropRules, state: PropState): number {
+  const p = currentPhase(rules, state);
+  const min = (state.initialBalance * p.profitableDayPct) / 100;
+  return Object.values(state.dailyPnl).filter((v) => v > 0 && v >= min).length;
+}
+
+function fmt(n: number) {
+  return n.toLocaleString("it-IT", { style: "currency", currency: "USD" });
+}
+
+/**
+ * Valuta le regole dopo una candela da 1 minuto.
+ * Restituisce il nuovo stato e l'azione che il simulatore deve compiere.
+ */
+export function evaluatePropBar(rules: PropRules, state: PropState, bar: PropBarInput): { state: PropState; action: PropAction } {
+  if (state.status !== "active") return { state, action: "none" };
+  const s: PropState = { ...state, tradingDays: state.tradingDays, dailyPnl: { ...state.dailyPnl } };
+
+  // Cambio di giornata: il punto di partenza è il saldo/equity di fine giornata precedente.
+  const day = tradingDay(bar.time - 1, rules.dayResetTimeZone);
+  if (s.day !== day) {
+    if (s.day !== null) {
+      s.dayStartBalance = s.lastBalance;
+      s.dayStartEquity = s.lastEquity;
+    }
+    s.day = day;
+  }
+  if (bar.opened > 0 && !s.tradingDays.includes(day)) s.tradingDays = [...s.tradingDays, day];
+  if (bar.closedPnl !== 0) s.dailyPnl[day] = Math.round(((s.dailyPnl[day] ?? 0) + bar.closedPnl) * 100) / 100;
+
+  s.lastBalance = bar.balance;
+  s.lastEquity = bar.equity;
+  s.lowestEquity = Math.min(s.lowestEquity, bar.minEquity);
+
+  const phase = currentPhase(rules, s);
+  const levels = propLevels(rules, s);
+
+  if (bar.minEquity <= levels.maxFloor) {
+    return fail(s, phase.name, `Perdita massima superata: l'equity è scesa a ${fmt(bar.minEquity)}, sotto il limite di ${fmt(levels.maxFloor)}.`, bar);
+  }
+  if (bar.minEquity <= levels.dailyFloor) {
+    return fail(s, phase.name, `Perdita giornaliera superata: l'equity è scesa a ${fmt(bar.minEquity)}, sotto il limite di giornata di ${fmt(levels.dailyFloor)}.`, bar);
+  }
+
+  const targetReached = bar.balance >= levels.target && bar.openPositions === 0;
+  const daysOk = s.tradingDays.length >= phase.minTradingDays;
+  const profitDaysOk = profitableDays(rules, s) >= phase.minProfitableDays;
+  if (targetReached && daysOk && profitDaysOk) {
+    const result: PhaseResult = {
+      phase: s.phase,
+      name: phase.name,
+      status: "passed",
+      reason: `Target raggiunto in ${s.tradingDays.length} giorni di trading.`,
+      time: bar.time,
+      balance: bar.balance,
+    };
+    const results = [...s.results, result];
+    if (s.phase + 1 >= rules.phases.length) {
+      return { state: { ...s, status: "passed", results }, action: "passed" };
+    }
+    // Nuova fase: si riparte dal saldo iniziale.
+    const fresh = newPropState(s.initialBalance);
+    return {
+      state: { ...fresh, phase: s.phase + 1, results, day: s.day },
+      action: "phase_passed",
+    };
+  }
+  return { state: s, action: "none" };
+}
+
+function fail(s: PropState, name: string, reason: string, bar: PropBarInput): { state: PropState; action: PropAction } {
+  const result: PhaseResult = { phase: s.phase, name, status: "failed", reason, time: bar.time, balance: bar.equity };
+  return { state: { ...s, status: "failed", failReason: reason, results: [...s.results, result] }, action: "fail" };
+}
+
+/** Cosa manca per superare la fase corrente, in frasi brevi. */
+export function missingRequirements(rules: PropRules, state: PropState): string[] {
+  if (state.status !== "active") return [];
+  const p = currentPhase(rules, state);
+  const lv = propLevels(rules, state);
+  const out: string[] = [];
+  if (state.lastBalance < lv.target) out.push(`Mancano ${fmt(lv.target - state.lastBalance)} al target.`);
+  const days = p.minTradingDays - state.tradingDays.length;
+  if (days > 0) out.push(`Servono ancora ${days} giorni di trading.`);
+  const pd = p.minProfitableDays - lv.profitableDays;
+  if (pd > 0) out.push(`Servono ancora ${pd} giorni in profitto.`);
+  return out;
+}

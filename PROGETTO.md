@@ -210,3 +210,21 @@ Le fasi 0–5 formano l'MVP. Ogni fase si chiude con una pull request revisionab
 1. App solo personale o da aprire anche ad altri utenti (cambia la scelta delle fonti dati)?
 2. Nome dell'app.
 3. Elenco preciso delle crypto da includere nell'MVP.
+
+---
+
+## 9. Stato dell'MVP (17/11/2026)
+
+Le fasi 0–5 sono costruite. Per far funzionare l'app senza creare account esterni, alcune scelte dello stack sono state semplificate rispetto alla sezione 5, dato che per ora l'app è per uso personale:
+
+| Previsto | Realizzato nell'MVP | Quando cambiarlo |
+|---|---|---|
+| Supabase (database e login) | Sessioni salvate nel browser (localStorage), nessun login | Quando servono più dispositivi o più utenti |
+| Cloudflare R2 per i dati | File annuali pubblicati nella release `data-v1` del repository da GitHub Actions | Se i dati diventano troppi o il repository diventa privato |
+| Vercel | Pronto per Vercel o Codespaces, senza variabili d'ambiente | — |
+| Forex e oro dal 2010 | Dukascopy via workflow "Dati storici" | — |
+| Crypto | Binance (archivi mensili e API pubblica) | — |
+
+Cosa c'è: replay con intrabar, 6 timeframe, ordini market/limit/stop, SL/TP trascinabili, size in lotti o % di rischio, spread e commissioni, sessioni multiple, statistiche con curva del saldo ed esportazione CSV, 4 prop firm a 2 fasi più regole personalizzate, nuovi tentativi, 28 coppie forex + oro + 8 crypto, linee orizzontali e trend line.
+
+Dalla sezione 2.2 (dopo l'MVP) restano: multi-grafico, indicatori, drawdown trailing, consistenza, altre prop firm, indici e futures, chiusure parziali e TP multipli.
